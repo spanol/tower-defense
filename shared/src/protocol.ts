@@ -9,6 +9,7 @@ import type {
   TilePos,
   WorldPos,
   GameMode,
+  VersusOpponentSummary,
 } from "./types.js";
 
 // ── Player / Room ──────────────────────────────────────
@@ -48,6 +49,7 @@ export type ClientMessage =
   | ClientPlaceTower
   | ClientUpgradeTower
   | ClientSellTower
+  | ClientSendAttack
   | ClientChat
   | ClientPing;
 
@@ -96,6 +98,12 @@ export interface ClientSellTower {
   seq: number;
 }
 
+export interface ClientSendAttack {
+  type: "send_attack";
+  /** Number of attack tokens to spend */
+  tokens: number;
+}
+
 export interface ClientChat {
   type: "chat";
   text: string;
@@ -122,6 +130,8 @@ export type ServerMessage =
   | ServerWaveComplete
   | ServerGameOver
   | ServerVictory
+  | ServerVersusResult
+  | ServerAttackIncoming
   | ServerChat
   | ServerPong
   | ServerError;
@@ -218,7 +228,7 @@ export interface ServerGameState {
   wave: number;
   phase: "prep" | "combat" | "gameover" | "victory";
   prepTimeRemaining: number;
-  gold: number; // shared in co-op
+  gold: number; // shared in co-op, per-player in versus
   lives: number;
   maxLives: number;
   towers: NetTower[];
@@ -226,6 +236,10 @@ export interface ServerGameState {
   projectiles: NetProjectile[];
   score: number;
   players: PlayerInfo[];
+  /** Versus-only: current player's attack tokens */
+  attackTokens?: number;
+  /** Versus-only: opponent summary */
+  opponent?: VersusOpponentSummary;
 }
 
 /** Delta update — only changed fields (sent at 20 ticks/sec) */
@@ -248,6 +262,10 @@ export interface ServerGameDelta {
   enemiesRemove?: string[];
   /** Projectiles — full replacement each delta (small set) */
   projectiles?: NetProjectile[];
+  /** Versus-only: current player's attack tokens */
+  attackTokens?: number;
+  /** Versus-only: opponent summary */
+  opponent?: VersusOpponentSummary;
 }
 
 export interface ServerWaveStart {
@@ -275,6 +293,21 @@ export interface ServerVictory {
   score: number;
 }
 
+export interface ServerVersusResult {
+  type: "versus_result";
+  winner: PlayerId;
+  winnerName: string;
+  loser: PlayerId;
+  loserName: string;
+  wave: number;
+}
+
+export interface ServerAttackIncoming {
+  type: "attack_incoming";
+  fromPlayer: PlayerId;
+  enemyCount: number;
+}
+
 // ── Constants ──────────────────────────────────────────
 
 export const TICK_RATE = 20; // server ticks per second
@@ -282,4 +315,5 @@ export const TICK_MS = 1000 / TICK_RATE;
 export const FULL_STATE_INTERVAL = 100; // full snapshot every N ticks (5 sec)
 export const RECONNECT_GRACE_MS = 30_000;
 export const MAX_ROOM_PLAYERS = 4;
+export const MAX_VERSUS_PLAYERS = 2;
 export const ROOM_CODE_LENGTH = 4;

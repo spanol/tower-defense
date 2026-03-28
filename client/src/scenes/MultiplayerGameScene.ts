@@ -2,6 +2,9 @@
  * MultiplayerGameScene — renders authoritative server state.
  * Sends player commands (place/upgrade/sell tower) to server.
  * Receives full state snapshots and deltas via binary protocol.
+ *
+ * Supports both co-op and versus modes. In versus mode, shows
+ * opponent health bar, attack token count, and send-attack button.
  */
 
 import Phaser from "phaser";
@@ -12,11 +15,14 @@ import {
   type TilePos,
   type TowerKind,
   type GameMode,
+  type VersusOpponentSummary,
 } from "@td/shared";
 import type {
   ServerMessage,
   ServerGameState,
   ServerGameDelta,
+  ServerVersusResult,
+  ServerAttackIncoming,
   NetTower,
   NetEnemy,
   NetProjectile,
@@ -92,6 +98,11 @@ export class MultiplayerGameScene extends Phaser.Scene {
   private prepTimeRemaining = 0;
   private score = 0;
 
+  // Versus state
+  private attackTokens = 0;
+  private opponent: VersusOpponentSummary | null = null;
+  private versusResult: ServerVersusResult | null = null;
+
   // Visual entities
   private towerVisuals = new Map<string, TowerVisual>();
   private enemyVisuals = new Map<string, EnemyVisual>();
@@ -110,6 +121,16 @@ export class MultiplayerGameScene extends Phaser.Scene {
   private modeText!: Phaser.GameObjects.Text;
   private towerPickerTexts: Phaser.GameObjects.Text[] = [];
 
+  // Versus HUD
+  private opponentPanel: Phaser.GameObjects.Container | null = null;
+  private opponentLivesText: Phaser.GameObjects.Text | null = null;
+  private opponentGoldText: Phaser.GameObjects.Text | null = null;
+  private opponentNameText: Phaser.GameObjects.Text | null = null;
+  private attackTokenText: Phaser.GameObjects.Text | null = null;
+  private attackBtn: Phaser.GameObjects.Text | null = null;
+  private attackNotice: Phaser.GameObjects.Text | null = null;
+  private resultOverlay: Phaser.GameObjects.Container | null = null;
+
   constructor() {
     super({ key: "MultiplayerGameScene" });
   }
@@ -117,6 +138,9 @@ export class MultiplayerGameScene extends Phaser.Scene {
   init(data: { mapKey?: string; mode?: GameMode; initialState?: ServerGameState }) {
     this.mapKey = data.mapKey ?? "forest";
     this.gameMode = data.mode ?? "coop";
+    this.attackTokens = 0;
+    this.opponent = null;
+    this.versusResult = null;
     if (data.initialState) {
       this.applyFullState(data.initialState);
     }
@@ -129,11 +153,16 @@ export class MultiplayerGameScene extends Phaser.Scene {
     this.projectileVisuals.clear();
     this.upgradePanel = null;
     this.selectedPlacedTowerId = null;
+    this.opponentPanel = null;
+    this.resultOverlay = null;
 
     this.drawMap();
     this.createHUD();
 
-    // Listen for server messages
+    if (this.gameMode === "versus") {
+      this.createVersusHUD();
+    }
+
     net.onMessage((msg) => this.handleServerMessage(msg));
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
@@ -183,7 +212,8 @@ export class MultiplayerGameScene extends Phaser.Scene {
     this.phaseText = this.add.text(260, 2, "", style).setDepth(10);
 
     const modeLabel = this.gameMode === "coop" ? "CO-OP" : "VS";
-    this.modeText = this.add.text(370, 2, modeLabel, { ...style, color: "#88ff88" }).setDepth(10);
+    const modeColor = this.gameMode === "versus" ? "#ff8844" : "#88ff88";
+    this.modeText = this.add.text(370, 2, modeLabel, { ...style, color: modeColor }).setDepth(10);
 
     // Tower picker at bottom
     const towerKinds: TowerKind[] = ["arrow", "cannon", "frost", "lightning", "mortar"];
@@ -214,6 +244,74 @@ export class MultiplayerGameScene extends Phaser.Scene {
     this.updateHUD();
   }
 
+  private createVersusHUD(): void {
+    const canvasWidth = this.map.cols * this.map.tileSize;
+    const style: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontSize: "9px",
+      color: "#ffffff",
+      fontFamily: "monospace",
+    };
+
+    // Opponent info panel (top-right)
+    this.opponentPanel = this.add.container(canvasWidth - 5, 2).setDepth(10);
+
+    const bg = this.add.rectangle(0, 0, 130, 44, 0x000000, 0.75).setOrigin(1, 0);
+    this.opponentPanel.add(bg);
+
+    this.opponentNameText = this.add.text(-125, 3, "Opponent", { ...style, color: "#ff8844" });
+    this.opponentPanel.add(this.opponentNameText);
+
+    this.opponentLivesText = this.add.text(-125, 15, "Lives: 20", style);
+    this.opponentPanel.add(this.opponentLivesText);
+
+    this.opponentGoldText = this.add.text(-60, 15, "Gold: 200", style);
+    this.opponentPanel.add(this.opponentGoldText);
+
+    // Attack tokens + send button (bottom-right, above tower picker)
+    const bottomY = this.map.rows * this.map.tileSize - 34;
+
+    this.attackTokenText = this.add
+      .text(canvasWidth - 130, bottomY, "Tokens: 0", {
+        ...style,
+        fontSize: "10px",
+        color: "#ffaa00",
+        backgroundColor: "#00000088",
+        padding: { x: 3, y: 2 },
+      })
+      .setDepth(10);
+
+    this.attackBtn = this.add
+      .text(canvasWidth - 55, bottomY, "[ATTACK]", {
+        ...style,
+        fontSize: "10px",
+        color: "#ff4444",
+        backgroundColor: "#330000",
+        padding: { x: 3, y: 2 },
+      })
+      .setDepth(10)
+      .setInteractive({ useHandCursor: true });
+
+    this.attackBtn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+      if (this.attackTokens > 0) {
+        net.send({ type: "send_attack", tokens: this.attackTokens });
+      }
+    });
+
+    // Attack incoming notice (center, fades)
+    this.attackNotice = this.add
+      .text(canvasWidth / 2, 60, "", {
+        fontSize: "14px",
+        color: "#ff4444",
+        fontFamily: "monospace",
+        backgroundColor: "#00000088",
+        padding: { x: 6, y: 3 },
+      })
+      .setOrigin(0.5)
+      .setDepth(20)
+      .setAlpha(0);
+  }
+
   private updateHUD(): void {
     this.goldText.setText(`Gold: ${this.gold}`);
     this.livesText.setText(`Lives: ${this.lives}`);
@@ -236,6 +334,81 @@ export class MultiplayerGameScene extends Phaser.Scene {
         txt.setColor(k === this.selectedTower ? "#ffffff" : "#ffcc00");
       }
     });
+
+    // Versus HUD updates
+    if (this.gameMode === "versus") {
+      this.updateVersusHUD();
+    }
+  }
+
+  private updateVersusHUD(): void {
+    if (this.opponent) {
+      this.opponentNameText?.setText(this.opponent.name);
+      this.opponentLivesText?.setText(`Lives: ${this.opponent.lives}`);
+      this.opponentGoldText?.setText(`Gold: ${this.opponent.gold}`);
+    }
+
+    this.attackTokenText?.setText(`Tokens: ${this.attackTokens}`);
+
+    if (this.attackBtn) {
+      const canAttack = this.attackTokens > 0;
+      this.attackBtn.setColor(canAttack ? "#ff4444" : "#666666");
+      this.attackBtn.setBackgroundColor(canAttack ? "#330000" : "#111111");
+    }
+  }
+
+  private showAttackNotice(enemyCount: number): void {
+    if (!this.attackNotice) return;
+    this.attackNotice.setText(`INCOMING ATTACK: ${enemyCount} enemies!`);
+    this.attackNotice.setAlpha(1);
+
+    this.tweens.add({
+      targets: this.attackNotice,
+      alpha: 0,
+      duration: 2500,
+      ease: "Power2",
+    });
+  }
+
+  private showVersusResult(result: ServerVersusResult): void {
+    this.versusResult = result;
+    const canvasW = this.map.cols * this.map.tileSize;
+    const canvasH = this.map.rows * this.map.tileSize;
+
+    this.resultOverlay = this.add.container(canvasW / 2, canvasH / 2).setDepth(30);
+
+    const bg = this.add.rectangle(0, 0, 250, 100, 0x000000, 0.9);
+    this.resultOverlay.add(bg);
+
+    const style = { fontSize: "14px", color: "#ffffff", fontFamily: "monospace" };
+
+    const title = this.add.text(0, -30, `${result.winnerName} WINS!`, {
+      ...style,
+      fontSize: "18px",
+      color: "#ffcc00",
+    }).setOrigin(0.5);
+    this.resultOverlay.add(title);
+
+    const detail = this.add.text(0, 0, `${result.loserName} eliminated on wave ${result.wave}`, {
+      ...style,
+      fontSize: "10px",
+      color: "#aaaaaa",
+    }).setOrigin(0.5);
+    this.resultOverlay.add(detail);
+
+    const backBtn = this.add.text(0, 30, "[ Back to Menu ]", {
+      ...style,
+      fontSize: "12px",
+      color: "#44ff44",
+    })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    backBtn.on("pointerdown", () => {
+      net.disconnect();
+      this.scene.start("MenuScene");
+    });
+    this.resultOverlay.add(backBtn);
   }
 
   // ── Upgrade panel ────────────────────────────────────
@@ -286,7 +459,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
       container.add(btn);
     }
 
-    // Sell button
     const sellValue = Math.floor(cfg.cost * 0.6);
     const sellBtn = this.add
       .text(20, 6, `[Sell $${sellValue}]`, {
@@ -324,7 +496,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
 
     if (row < 0 || row >= this.map.rows || col < 0 || col >= this.map.cols) return;
 
-    // Check existing tower
     for (const [id, visual] of this.towerVisuals) {
       if (visual.data.pos.col === col && visual.data.pos.row === row) {
         this.showUpgradePanel(id);
@@ -339,7 +510,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
     const cfg = TOWER_CONFIGS[this.selectedTower];
     if (!cfg || this.gold < cfg.cost) return;
 
-    // Send place command to server
     net.send({
       type: "place_tower",
       kind: this.selectedTower,
@@ -380,11 +550,20 @@ export class MultiplayerGameScene extends Phaser.Scene {
         this.updateHUD();
         break;
 
+      case "versus_result":
+        this.phase = "gameover";
+        this.showVersusResult(msg as ServerVersusResult);
+        this.updateHUD();
+        break;
+
+      case "attack_incoming":
+        this.showAttackNotice((msg as ServerAttackIncoming).enemyCount);
+        break;
+
       case "action_ack":
-        break; // Client prediction confirmed
+        break;
 
       case "action_reject":
-        // Server rejected — state will correct on next delta
         break;
 
       case "error":
@@ -404,6 +583,10 @@ export class MultiplayerGameScene extends Phaser.Scene {
     this.lives = state.lives;
     this.maxLives = state.maxLives;
     this.score = state.score;
+
+    // Versus fields
+    if (state.attackTokens !== undefined) this.attackTokens = state.attackTokens;
+    if (state.opponent) this.opponent = state.opponent;
 
     // Rebuild tower map
     const newTowerIds = new Set(state.towers.map((t) => t.id));
@@ -441,6 +624,10 @@ export class MultiplayerGameScene extends Phaser.Scene {
     if (delta.lives !== undefined) this.lives = delta.lives;
     if (delta.score !== undefined) this.score = delta.score;
 
+    // Versus fields
+    if (delta.attackTokens !== undefined) this.attackTokens = delta.attackTokens;
+    if (delta.opponent) this.opponent = delta.opponent;
+
     if (delta.towersUpsert) {
       for (const t of delta.towersUpsert) this.upsertTower(t);
     }
@@ -454,7 +641,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
       for (const id of delta.enemiesRemove) this.removeEnemyVisual(id);
     }
     if (delta.projectiles !== undefined) {
-      // Full replacement
       const newIds = new Set(delta.projectiles.map((p) => p.id));
       for (const [id, visual] of this.projectileVisuals) {
         if (!newIds.has(id)) {
@@ -479,7 +665,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
     if (existing) {
       existing.data = data;
       existing.tierLabel.setText(data.tier > 0 ? `${data.tier}` : "");
-      // Update range circle if tier changed
       const cfg = TOWER_CONFIGS[data.kind];
       if (cfg) {
         let range = cfg.range;
@@ -593,7 +778,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
   }
 
   private syncVisuals(): void {
-    // Cleanup stale projectile visuals
     for (const [id, visual] of this.projectileVisuals) {
       if (!visual.data) {
         visual.graphic.destroy();
@@ -602,7 +786,6 @@ export class MultiplayerGameScene extends Phaser.Scene {
     }
   }
 
-  // No local update loop needed — everything driven by server deltas
   update(): void {
     // HUD updates happen on message receipt
   }

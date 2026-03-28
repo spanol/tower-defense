@@ -185,6 +185,13 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
       break;
     }
 
+    case "send_attack": {
+      const room = conn.roomId ? rooms.get(conn.roomId) : null;
+      if (!room || room.getStatus() !== "playing") return;
+      room.handleSendAttack(conn.playerId, msg);
+      break;
+    }
+
     case "chat": {
       const room = conn.roomId ? rooms.get(conn.roomId) : null;
       if (!room) return;

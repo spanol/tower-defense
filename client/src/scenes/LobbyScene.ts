@@ -4,7 +4,7 @@
  */
 
 import Phaser from "phaser";
-import { MAPS, MAP_KEYS, type GameMode, type RoomInfo, type ServerMessage } from "@td/shared";
+import { MAPS, MAP_KEYS, type RoomInfo, type ServerMessage } from "@td/shared";
 import { net } from "../network.js";
 
 export class LobbyScene extends Phaser.Scene {
@@ -157,7 +157,8 @@ export class LobbyScene extends Phaser.Scene {
     const room = this.currentRoom;
     const modeLabel = room.mode === "coop" ? "CO-OP" : "VERSUS";
 
-    const t1 = this.add.text(cx, 200, `Room: ${room.code}  |  ${modeLabel}  |  ${MAPS[room.mapKey]?.name ?? room.mapKey}`, style).setOrigin(0.5);
+    const maxP = room.maxPlayers;
+    const t1 = this.add.text(cx, 200, `Room: ${room.code}  |  ${modeLabel} (${room.players.length}/${maxP})  |  ${MAPS[room.mapKey]?.name ?? room.mapKey}`, style).setOrigin(0.5);
     this.roomInfoTexts.push(t1);
 
     room.players.forEach((p, i) => {

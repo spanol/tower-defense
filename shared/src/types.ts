@@ -122,3 +122,14 @@ export interface GameState {
   projectiles: ProjectileState[];
   score: number;
 }
+
+/** Summary of the opponent's state shown in versus mode */
+export interface VersusOpponentSummary {
+  playerId: string;
+  name: string;
+  lives: number;
+  maxLives: number;
+  gold: number;
+  attackTokens: number;
+  towerCount: number;
+}
