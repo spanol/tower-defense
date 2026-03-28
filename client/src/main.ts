@@ -4,18 +4,45 @@ import { MenuScene } from "./scenes/MenuScene.js";
 import { LobbyScene } from "./scenes/LobbyScene.js";
 import { MultiplayerGameScene } from "./scenes/MultiplayerGameScene.js";
 
-const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
-  width: 480, // 15 cols * 32px
-  height: 320, // 10 rows * 32px
-  parent: document.body,
-  backgroundColor: "#1a1a2e",
-  pixelArt: true,
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-  },
-  scene: [MenuScene, GameScene, LobbyScene, MultiplayerGameScene],
-};
+let game: Phaser.Game | null = null;
 
-new Phaser.Game(config);
+const landing = document.getElementById("landing")!;
+const gameContainer = document.getElementById("game-container")!;
+const backBtn = document.getElementById("back-to-landing")!;
+const playBtn = document.getElementById("play-now-btn")!;
+
+function startGame() {
+  landing.classList.add("hidden");
+  gameContainer.classList.add("active");
+  backBtn.classList.add("active");
+
+  if (!game) {
+    game = new Phaser.Game({
+      type: Phaser.AUTO,
+      width: 480,
+      height: 320,
+      parent: gameContainer,
+      backgroundColor: "#1a1a2e",
+      pixelArt: true,
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+      scene: [MenuScene, GameScene, LobbyScene, MultiplayerGameScene],
+    });
+  }
+}
+
+function showLanding() {
+  if (game) {
+    game.destroy(true);
+    game = null;
+  }
+  gameContainer.classList.remove("active");
+  backBtn.classList.remove("active");
+  landing.classList.remove("hidden");
+  window.scrollTo(0, 0);
+}
+
+playBtn.addEventListener("click", startGame);
+backBtn.addEventListener("click", showLanding);

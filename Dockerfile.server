@@ -1,0 +1,29 @@
+FROM node:20-alpine AS build
+RUN corepack enable
+WORKDIR /app
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY shared/ shared/
+COPY server/ server/
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @td/server build
+
+FROM node:20-alpine
+RUN corepack enable
+WORKDIR /app
+
+COPY --from=build /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/package.json ./
+COPY --from=build /app/shared/package.json shared/package.json
+COPY --from=build /app/shared/dist shared/dist
+COPY --from=build /app/server/package.json server/package.json
+COPY --from=build /app/server/dist server/dist
+
+RUN pnpm install --frozen-lockfile --prod
+
+ENV TD_PORT=3001
+ENV TD_DB_PATH=/data/td.sqlite
+EXPOSE 3001
+VOLUME /data
+
+CMD ["node", "server/dist/index.js"]

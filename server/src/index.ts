@@ -1,8 +1,10 @@
 /**
- * Multiplayer Tower Defense — WebSocket server.
- * Handles lobby, rooms, and relays game state from GameRoom instances.
+ * Multiplayer Tower Defense — WebSocket + HTTP server.
+ * Handles lobby, rooms, relays game state, and serves REST API
+ * for player profiles, match history, and analytics.
  */
 
+import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { v4 as uuid } from "uuid";
 import { decode } from "@msgpack/msgpack";
@@ -12,6 +14,8 @@ import type {
   ServerMessage,
 } from "@td/shared";
 import { GameRoom, type SendFn } from "./game-room.js";
+import { handleHttpRequest } from "./api.js";
+import { playerDb, matchDb, analyticsDb } from "./db.js";
 
 const PORT = parseInt(process.env.TD_PORT ?? "3001", 10);
 
@@ -20,6 +24,7 @@ const PORT = parseInt(process.env.TD_PORT ?? "3001", 10);
 interface Connection {
   ws: WebSocket;
   playerId: PlayerId;
+  playerName: string;
   roomId: string | null;
 }
 
@@ -66,6 +71,52 @@ function destroyRoom(room: GameRoom): void {
   roomsByCode.delete(room.code);
 }
 
+// Track game start times per room for match recording
+const roomStartTimes = new Map<string, number>();
+
+/** Record a completed match to the database */
+function recordMatch(room: GameRoom, result: "victory" | "defeat" | "disconnect"): void {
+  const info = room.getRoomInfo();
+  const startedAt = roomStartTimes.get(room.id) ?? Date.now();
+  const finishedAt = Date.now();
+  const durationMs = finishedAt - startedAt;
+  const playerIds = info.players.map((p) => p.id);
+
+  // Ensure all players exist in the DB
+  for (const p of info.players) {
+    const conn = connections.get(p.id);
+    const name = conn?.playerName ?? p.name;
+    playerDb.upsert(p.id, name);
+  }
+
+  const matchId = uuid();
+  const state = room.buildFullState();
+  matchDb.record(
+    matchId,
+    info.mode,
+    info.mapKey,
+    state.wave,
+    state.score,
+    result,
+    durationMs,
+    startedAt,
+    finishedAt,
+    playerIds,
+  );
+
+  analyticsDb.track("match_complete", undefined, matchId, {
+    mode: info.mode,
+    map: info.mapKey,
+    result,
+    waves: state.wave,
+    score: state.score,
+    players: info.players.length,
+    durationMs,
+  });
+
+  roomStartTimes.delete(room.id);
+}
+
 // Periodic cleanup of disconnected players past grace period
 setInterval(() => {
   for (const room of rooms.values()) {
@@ -84,16 +135,25 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
         sendJson(conn.ws, { type: "error", message: "Already in a room" });
         return;
       }
+      conn.playerName = msg.playerName;
+      playerDb.upsert(conn.playerId, msg.playerName);
+
       const room = new GameRoom(
         conn.playerId,
         msg.playerName,
         msg.mode,
         msg.mapKey,
         makeSendFn(),
+        (r, result) => recordMatch(r, result),
       );
       rooms.set(room.id, room);
       roomsByCode.set(room.code, room);
       conn.roomId = room.id;
+
+      analyticsDb.track("room_created", conn.playerId, undefined, {
+        mode: msg.mode,
+        map: msg.mapKey,
+      });
 
       sendJson(conn.ws, { type: "room_created", room: room.getRoomInfo() });
       break;
@@ -114,6 +174,10 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
         return;
       }
       conn.roomId = room.id;
+      conn.playerName = msg.playerName;
+      playerDb.upsert(conn.playerId, msg.playerName);
+
+      analyticsDb.track("room_joined", conn.playerId);
 
       sendJson(conn.ws, {
         type: "room_joined",
@@ -159,6 +223,12 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
       setTimeout(() => {
         if (room.getStatus() === "waiting") {
           room.startGame();
+          roomStartTimes.set(room.id, Date.now());
+          analyticsDb.track("game_started", conn.playerId, undefined, {
+            mode: room.getRoomInfo().mode,
+            map: room.getRoomInfo().mapKey,
+            players: room.getRoomInfo().players.length,
+          });
         }
       }, 3000);
       break;
@@ -168,6 +238,7 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
       const room = conn.roomId ? rooms.get(conn.roomId) : null;
       if (!room || room.getStatus() !== "playing") return;
       room.handlePlaceTower(conn.playerId, msg);
+      analyticsDb.track("tower_placed", conn.playerId, undefined, { kind: msg.kind });
       break;
     }
 
@@ -175,6 +246,7 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
       const room = conn.roomId ? rooms.get(conn.roomId) : null;
       if (!room || room.getStatus() !== "playing") return;
       room.handleUpgradeTower(conn.playerId, msg);
+      analyticsDb.track("tower_upgraded", conn.playerId);
       break;
     }
 
@@ -195,11 +267,11 @@ function handleMessage(conn: Connection, msg: ClientMessage): void {
     case "chat": {
       const room = conn.roomId ? rooms.get(conn.roomId) : null;
       if (!room) return;
-      const text = msg.text.slice(0, 200); // limit chat length
+      const text = msg.text.slice(0, 200);
       broadcastToRoom(room, {
         type: "chat",
         playerId: conn.playerId,
-        playerName: "Player", // TODO: store name on connection
+        playerName: conn.playerName,
         text,
       });
       break;
@@ -246,14 +318,24 @@ function broadcastToRoom(room: GameRoom, msg: ServerMessage): void {
   }
 }
 
-// ── WebSocket server ───────────────────────────────────
+// ── HTTP + WebSocket server ───────────────────────────
 
-const wss = new WebSocketServer({ port: PORT });
+const httpServer = createServer(async (req, res) => {
+  const handled = await handleHttpRequest(req, res);
+  if (!handled) {
+    res.writeHead(404);
+    res.end("Not found");
+  }
+});
+
+const wss = new WebSocketServer({ server: httpServer });
 
 wss.on("connection", (ws: WebSocket) => {
   const playerId = uuid();
-  const conn: Connection = { ws, playerId, roomId: null };
+  const conn: Connection = { ws, playerId, playerName: `Player${Math.floor(Math.random() * 9999)}`, roomId: null };
   connections.set(playerId, conn);
+
+  analyticsDb.track("player_connected", playerId);
 
   // Send player their ID
   sendJson(ws, { type: "room_left" } as ServerMessage); // noop ack
@@ -271,6 +353,7 @@ wss.on("connection", (ws: WebSocket) => {
   });
 
   ws.on("close", () => {
+    analyticsDb.track("player_disconnected", playerId);
     leaveRoom(conn);
     connections.delete(playerId);
   });
@@ -281,4 +364,8 @@ wss.on("connection", (ws: WebSocket) => {
   });
 });
 
-console.log(`Tower Defense server listening on ws://localhost:${PORT}`);
+httpServer.listen(PORT, () => {
+  console.log(`Tower Defense server listening on http://localhost:${PORT}`);
+  console.log(`  WebSocket: ws://localhost:${PORT}`);
+  console.log(`  REST API:  http://localhost:${PORT}/api/`);
+});

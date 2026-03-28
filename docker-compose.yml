@@ -1,0 +1,24 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      TD_PORT: "3001"
+      TD_DB_PATH: /data/td.sqlite
+    volumes:
+      - td-data:/data
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    restart: unless-stopped
+
+volumes:
+  td-data:

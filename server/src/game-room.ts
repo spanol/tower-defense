@@ -226,6 +226,7 @@ interface VersusLane {
 }
 
 export type SendFn = (playerId: PlayerId, msg: ServerMessage | Uint8Array) => void;
+export type MatchEndCallback = (room: GameRoom, result: "victory" | "defeat" | "disconnect") => void;
 
 // ── GameRoom ───────────────────────────────────────────
 
@@ -271,6 +272,7 @@ export class GameRoom {
 
   private tickInterval: ReturnType<typeof setInterval> | null = null;
   private sendFn: SendFn;
+  private onMatchEnd?: MatchEndCallback;
 
   private nextEntityId = 0;
 
@@ -280,6 +282,7 @@ export class GameRoom {
     mode: GameMode,
     mapKey: string,
     sendFn: SendFn,
+    onMatchEnd?: MatchEndCallback,
   ) {
     this.id = uuid();
     this.code = generateRoomCode();
@@ -288,6 +291,7 @@ export class GameRoom {
     this.map = MAPS[mapKey] ?? MAPS.forest;
     this.hostId = hostId;
     this.sendFn = sendFn;
+    this.onMatchEnd = onMatchEnd;
 
     this.addPlayer(hostId, hostName);
   }
@@ -736,6 +740,7 @@ export class GameRoom {
           this.dirtyScalars = true;
           this.broadcastMsg({ type: "victory", wave: this.wave, score: this.score });
           this.stop();
+          this.onMatchEnd?.(this, "victory");
         } else {
           this.startNextWave();
         }
@@ -795,6 +800,7 @@ export class GameRoom {
             wave: this.wave,
           });
           this.stop();
+          this.onMatchEnd?.(this, "defeat");
           return;
         }
       }
@@ -821,6 +827,7 @@ export class GameRoom {
             wave: this.wave,
           });
           this.stop();
+          this.onMatchEnd?.(this, "victory");
         } else {
           this.versusWaveComplete();
           this.startNextWave();
@@ -978,6 +985,7 @@ export class GameRoom {
       this.dirtyScalars = true;
       this.broadcastMsg({ type: "game_over", wave: this.wave, score: this.score });
       this.stop();
+      this.onMatchEnd?.(this, "defeat");
     }
   }
 

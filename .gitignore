@@ -2,3 +2,6 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
