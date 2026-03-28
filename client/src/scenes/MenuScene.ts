@@ -50,7 +50,7 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const playBtn = this.add
-      .text(cx, cy + 5 + MAP_KEYS.length * 22 + 15, "[ PLAY ]", {
+      .text(cx, cy + 5 + MAP_KEYS.length * 22 + 15, "[ PLAY SOLO ]", {
         fontSize: "16px",
         color: "#44ff44",
         fontFamily: "monospace",
@@ -60,6 +60,19 @@ export class MenuScene extends Phaser.Scene {
 
     playBtn.on("pointerdown", () => {
       this.scene.start("GameScene", { mapKey: MAP_KEYS[this.selectedMap] });
+    });
+
+    const multiBtn = this.add
+      .text(cx, cy + 5 + MAP_KEYS.length * 22 + 40, "[ MULTIPLAYER ]", {
+        fontSize: "16px",
+        color: "#44aaff",
+        fontFamily: "monospace",
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    multiBtn.on("pointerdown", () => {
+      this.scene.start("LobbyScene");
     });
   }
 }
