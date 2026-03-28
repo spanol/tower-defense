@@ -1,0 +1,19 @@
+{
+  "name": "tower-defense",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multiplayer Tower Defense browser game",
+  "scripts": {
+    "dev": "pnpm --filter client dev",
+    "dev:server": "pnpm --filter server dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
