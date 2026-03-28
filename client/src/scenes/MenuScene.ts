@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { MAPS, MAP_KEYS } from "@td/shared";
+import { audio } from "../audio.js";
 
 export class MenuScene extends Phaser.Scene {
   private selectedMap = 0;
@@ -72,7 +73,51 @@ export class MenuScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     multiBtn.on("pointerdown", () => {
+      audio.play("ui_click");
       this.scene.start("LobbyScene");
+    });
+
+    // Audio controls
+    const audioStyle = { fontSize: "10px", color: "#888888", fontFamily: "monospace" };
+    const audioY = cy + 5 + MAP_KEYS.length * 22 + 75;
+
+    const muteBtn = this.add
+      .text(cx - 40, audioY, audio.muted ? "[ UNMUTE ]" : "[ MUTE ]", {
+        ...audioStyle,
+        color: audio.muted ? "#ff8888" : "#888888",
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    muteBtn.on("pointerdown", () => {
+      const muted = audio.toggleMute();
+      muteBtn.setText(muted ? "[ UNMUTE ]" : "[ MUTE ]");
+      muteBtn.setColor(muted ? "#ff8888" : "#888888");
+      audio.play("ui_click");
+    });
+
+    const volLabel = this.add.text(cx + 30, audioY, `Vol: ${Math.round(audio.volume * 100)}%`, audioStyle).setOrigin(0.5);
+
+    const volDown = this.add
+      .text(cx + 65, audioY, "[-]", { ...audioStyle, color: "#ffcc00" })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    volDown.on("pointerdown", () => {
+      audio.volume -= 0.1;
+      volLabel.setText(`Vol: ${Math.round(audio.volume * 100)}%`);
+      audio.play("ui_click");
+    });
+
+    const volUp = this.add
+      .text(cx + 85, audioY, "[+]", { ...audioStyle, color: "#ffcc00" })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    volUp.on("pointerdown", () => {
+      audio.volume += 0.1;
+      volLabel.setText(`Vol: ${Math.round(audio.volume * 100)}%`);
+      audio.play("ui_click");
     });
   }
 }

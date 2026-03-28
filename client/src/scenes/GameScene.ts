@@ -12,6 +12,7 @@ import {
   type EnemyKind,
   type TowerConfig,
 } from "@td/shared";
+import { audio } from "../audio.js";
 
 // ── Color palette ──────────────────────────────────────
 const COLORS: Record<string, number> = {
@@ -164,6 +165,7 @@ export class GameScene extends Phaser.Scene {
   private map!: GameMap;
   private towers: Tower[] = [];
   private enemies: Enemy[] = [];
+  private enemyIndex = new Map<string, Enemy>();
   private projectiles: Projectile[] = [];
 
   private gold = STARTING_GOLD;
@@ -201,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.map = MAPS[this.mapKey];
     this.towers = [];
     this.enemies = [];
+    this.enemyIndex.clear();
     this.projectiles = [];
     this.gold = STARTING_GOLD;
     this.lives = STARTING_LIVES;
@@ -401,6 +404,7 @@ export class GameScene extends Phaser.Scene {
     // Update tier label
     tower.tierLabel.setText(tower.tier > 0 ? `${tower.tier}` : "");
 
+    audio.play("tower_upgrade");
     this.showUpgradePanel(tower);
     this.updateHUD();
   }
@@ -415,6 +419,7 @@ export class GameScene extends Phaser.Scene {
     const idx = this.towers.indexOf(tower);
     if (idx !== -1) this.towers.splice(idx, 1);
 
+    audio.play("tower_sell");
     this.closeUpgradePanel();
     this.updateHUD();
   }
@@ -429,6 +434,7 @@ export class GameScene extends Phaser.Scene {
       // Wave completion bonus
       const waveBonus = 10 + this.wave * 2;
       this.gold += waveBonus;
+      audio.play("wave_complete");
     }
 
     this.wave++;
@@ -442,6 +448,7 @@ export class GameScene extends Phaser.Scene {
 
   private startCombat() {
     this.phase = "combat";
+    audio.play("wave_start");
     this.updateHUD();
   }
 
@@ -506,6 +513,7 @@ export class GameScene extends Phaser.Scene {
       rangeCircle,
       tierLabel,
     });
+    audio.play("tower_place");
   }
 
   // ── Spawn enemies ──────────────────────────────────
@@ -537,7 +545,7 @@ export class GameScene extends Phaser.Scene {
       hpBar.setFillStyle(0xff6600);
     }
 
-    this.enemies.push({
+    const enemy: Enemy = {
       id: uid(),
       kind,
       hp: cfg.hp,
@@ -553,7 +561,9 @@ export class GameScene extends Phaser.Scene {
       hpBg,
       slowFactor: 1,
       slowDuration: 0,
-    });
+    };
+    this.enemies.push(enemy);
+    this.enemyIndex.set(enemy.id, enemy);
   }
 
   // ── Update loop ────────────────────────────────────
@@ -579,6 +589,7 @@ export class GameScene extends Phaser.Scene {
     if (this.waveSpawnIndex >= this.waveSpawns.length && this.enemies.length === 0) {
       if (this.wave >= MAX_WAVES) {
         this.phase = "victory";
+        audio.play("victory");
       } else {
         this.startNextWave();
       }
@@ -663,6 +674,7 @@ export class GameScene extends Phaser.Scene {
     if (this.lives <= 0) {
       this.lives = 0;
       this.phase = "gameover";
+      audio.play("game_over");
     }
   }
 
@@ -718,6 +730,9 @@ export class GameScene extends Phaser.Scene {
       chainCount,
       chainHitIds: new Set(),
     });
+
+    const sfxMap = { arrow: "shoot_arrow", cannon: "shoot_cannon", frost: "shoot_frost", lightning: "shoot_lightning", mortar: "shoot_mortar" } as const;
+    audio.play(sfxMap[tower.kind]);
   }
 
   private updateProjectiles(dt: number) {
@@ -725,7 +740,7 @@ export class GameScene extends Phaser.Scene {
     const toRemove: string[] = [];
 
     for (const proj of this.projectiles) {
-      const target = this.enemies.find((e) => e.id === proj.targetId);
+      const target = this.enemyIndex.get(proj.targetId);
       if (!target) {
         toRemove.push(proj.id);
         continue;
@@ -806,6 +821,7 @@ export class GameScene extends Phaser.Scene {
 
     if (enemy.hp <= 0) {
       this.gold += enemy.reward;
+      audio.play(enemy.kind === "boss" ? "boss_die" : "enemy_die");
       this.removeEnemy(enemy.id);
     }
   }
@@ -818,5 +834,6 @@ export class GameScene extends Phaser.Scene {
     enemy.hpBar.destroy();
     enemy.hpBg.destroy();
     this.enemies.splice(idx, 1);
+    this.enemyIndex.delete(id);
   }
 }

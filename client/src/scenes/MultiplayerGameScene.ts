@@ -28,6 +28,7 @@ import type {
   NetProjectile,
 } from "@td/shared";
 import { net } from "../network.js";
+import { audio } from "../audio.js";
 
 // ── Colors (same as single-player) ────────────────────
 const COLORS: Record<string, number> = {
@@ -454,6 +455,7 @@ export class MultiplayerGameScene extends Phaser.Scene {
 
       btn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
         pointer.event.stopPropagation();
+        audio.play("tower_upgrade");
         net.send({ type: "upgrade_tower", towerId: tower.id, seq: net.nextSeq() });
       });
       container.add(btn);
@@ -472,6 +474,7 @@ export class MultiplayerGameScene extends Phaser.Scene {
 
     sellBtn.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       pointer.event.stopPropagation();
+      audio.play("tower_sell");
       net.send({ type: "sell_tower", towerId: tower.id, seq: net.nextSeq() });
       this.closeUpgradePanel();
     });
@@ -510,6 +513,7 @@ export class MultiplayerGameScene extends Phaser.Scene {
     const cfg = TOWER_CONFIGS[this.selectedTower];
     if (!cfg || this.gold < cfg.cost) return;
 
+    audio.play("tower_place");
     net.send({
       type: "place_tower",
       kind: this.selectedTower,
@@ -535,28 +539,34 @@ export class MultiplayerGameScene extends Phaser.Scene {
         break;
 
       case "wave_start":
+        audio.play("wave_start");
         break;
 
       case "wave_complete":
+        audio.play("wave_complete");
         break;
 
       case "game_over":
         this.phase = "gameover";
+        audio.play("game_over");
         this.updateHUD();
         break;
 
       case "victory":
         this.phase = "victory";
+        audio.play("victory");
         this.updateHUD();
         break;
 
       case "versus_result":
         this.phase = "gameover";
         this.showVersusResult(msg as ServerVersusResult);
+        audio.play("game_over");
         this.updateHUD();
         break;
 
       case "attack_incoming":
+        audio.play("attack_incoming");
         this.showAttackNotice((msg as ServerAttackIncoming).enemyCount);
         break;
 
