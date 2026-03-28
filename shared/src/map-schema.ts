@@ -78,7 +78,43 @@ function parseLayout(layout: string): { tiles: TileType[][]; path: { col: number
   return { tiles, path };
 }
 
+/**
+ * Second map: "Desert Crossing"
+ * 15x10 grid — long winding S-curve with more buildable tiles
+ */
+const DESERT_LAYOUT = `
+SPPPPPPBBBXXXXXX
+XXXXXXXPBBXXXXXX
+XXXXXBBPBBXXXXXX
+XXXXXBBPPPPPPXXX
+XXXXXXXXXBBBPXXX
+XXXXXXXXXBBBPXXX
+XXXPPPPPPPPBPXXX
+XXXPBBBBXXXXXBXX
+XXXPPPPPPPPPPBXX
+XXXXXXXXXXXXXXEX
+`.trim();
+
+/**
+ * Third map: "Mountain Pass"
+ * 15x10 grid — tight zigzag with limited build space
+ */
+const MOUNTAIN_LAYOUT = `
+XXXXXXXBXXXXXXX
+SPPPPPPPBXXXXXX
+XXXXXXXPXXXXXXX
+XBPPPPPPPPPPPBX
+XBPXXXXXXXXXPXX
+XBPXXXXXXXXXPXX
+XBPPPPPPPBXXPXX
+XXXXXXXXXPBXPXX
+XXXXXXXXXPPPPEX
+XXXXXXXXXXXXXXX
+`.trim();
+
 const forestParsed = parseLayout(FOREST_LAYOUT);
+const desertParsed = parseLayout(DESERT_LAYOUT);
+const mountainParsed = parseLayout(MOUNTAIN_LAYOUT);
 
 export const MAPS: Record<string, GameMap> = {
   forest: {
@@ -89,6 +125,23 @@ export const MAPS: Record<string, GameMap> = {
     tiles: forestParsed.tiles,
     path: forestParsed.path,
   },
+  desert: {
+    name: "Desert Crossing",
+    cols: 15,
+    rows: 10,
+    tileSize: 32,
+    tiles: desertParsed.tiles,
+    path: desertParsed.path,
+  },
+  mountain: {
+    name: "Mountain Pass",
+    cols: 15,
+    rows: 10,
+    tileSize: 32,
+    tiles: mountainParsed.tiles,
+    path: mountainParsed.path,
+  },
 };
 
+export const MAP_KEYS = Object.keys(MAPS) as (keyof typeof MAPS)[];
 export const DEFAULT_MAP = "forest";
