@@ -93,6 +93,14 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
   }
 
   const url = req.url?.split("?")[0];
+
+  // Health check — managed hosts (Railway/Render/Fly) probe the root or /health.
+  // Returns 200 so platform health checks pass and route traffic to the container.
+  if (req.method === "GET" && (url === "/" || url === "/health" || url === "/healthz")) {
+    json(res, { status: "ok", service: "td-server", ts: Date.now() });
+    return true;
+  }
+
   if (!url?.startsWith("/api/")) return false;
 
   for (const r of routes) {

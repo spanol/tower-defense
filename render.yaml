@@ -1,0 +1,12 @@
+# Render Blueprint for the Tower Defense WebSocket game server.
+# Deploy: connect this repo in the Render dashboard (New > Blueprint),
+# or `render blueprint launch`. Free tier works; note the SQLite DB at
+# /data is ephemeral unless a paid persistent disk is attached (see DEPLOY-SERVER.md).
+services:
+  - type: web
+    name: td-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile.server
+    healthCheckPath: /health
+    plan: free
+    autoDeploy: false

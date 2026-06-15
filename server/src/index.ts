@@ -17,7 +17,9 @@ import { GameRoom, type SendFn } from "./game-room.js";
 import { handleHttpRequest } from "./api.js";
 import { playerDb, matchDb, analyticsDb } from "./db.js";
 
-const PORT = parseInt(process.env.TD_PORT ?? "3001", 10);
+// Managed hosts (Railway / Render / Fly) inject the listen port via PORT.
+// Honor TD_PORT first (local/docker), then PORT, then default.
+const PORT = parseInt(process.env.TD_PORT ?? process.env.PORT ?? "3001", 10);
 
 // ── Connection tracking ────────────────────────────────
 

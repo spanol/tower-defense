@@ -13,7 +13,11 @@ import type {
 
 export type MessageHandler = (msg: ServerMessage | ServerGameState | ServerGameDelta) => void;
 
-const DEFAULT_URL = "ws://localhost:3001";
+// WS endpoint is build-time configurable so the static client (e.g. surge.sh)
+// can point at a managed host. Set VITE_WS_URL at build time, e.g.
+//   VITE_WS_URL=wss://td-server.up.railway.app pnpm --filter @td/client build
+// Falls back to the local dev server when unset.
+const DEFAULT_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001";
 
 export class NetworkClient {
   private ws: WebSocket | null = null;
