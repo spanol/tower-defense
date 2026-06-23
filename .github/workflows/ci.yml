@@ -1,0 +1,47 @@
+name: CI
+
+# Validation CI for the tower-defense pnpm monorepo (client + server + shared).
+# Authored for SPA-47 against the real layout of github.com/spanol/tower-defense and
+# proven green locally (pnpm -r build, fresh checkout, exit 0).
+#
+# `pnpm -r build` runs in workspace-topological order: shared (tsc -b, composite) emits
+# its declarations first, then server (tsc) resolves them, then client (tsc + vite build).
+# tsc fails the job on any type error, so this doubles as the typecheck gate — a separate
+# `pnpm -r typecheck` is intentionally omitted because it does not emit shared/dist and so
+# is not self-sufficient on a clean checkout.
+#
+# No deploy step: the board chose not to provision a SURGE_TOKEN, and the multiplayer
+# server is hosted separately (SPA-37). CI proves the monorepo builds; deploy stays a
+# separate, host-credentialed concern.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (shared -> server -> client; typechecks as it builds)
+        run: pnpm -r build
